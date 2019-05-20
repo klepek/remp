@@ -43,6 +43,10 @@ return [
         'token' => env('CRM_SEGMENT_API_TOKEN'),
     ],
 
+    'petit_press_segment' => [
+        'base_url' => env('PETIT_PRESS_SEGMENT_API_URL'),
+    ],
+
     'remp' => [
         'beam' => [
             'web_addr' => env('REMP_BEAM_ADDR'),

@@ -157,6 +157,7 @@ return [
         App\Providers\BeamTrackerServiceProvider::class,
         App\Providers\PythiaSegmentsServiceProvider::class,
         App\Providers\StatsServiceProvider::class,
+        App\Providers\PetitPressSegmentServiceProvider::class
     ],
 
     /*
