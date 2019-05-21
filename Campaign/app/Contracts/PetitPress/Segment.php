@@ -14,7 +14,7 @@ class Segment implements SegmentContract
 {
     const PROVIDER_ALIAS = 'petitpress_segment';
 
-    const LIST_ENDPOINT = 'remp/api/v1/list-segment';
+    const LIST_ENDPOINT = 'remp/api/v1/list-segments';
 
     const USERS_ENDPOINT = 'remp/api/v1/list-users/%s/';
 
