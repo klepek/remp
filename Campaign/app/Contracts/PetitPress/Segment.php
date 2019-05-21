@@ -48,9 +48,9 @@ class Segment implements SegmentContract
             throw new SegmentException("Could not connect to Segment:List endpoint: {$e->getMessage()}");
         }
 
-        $list = json_decode($response->getBody());
+        $segments = json_decode($response->getBody());
         $campaignSegments = [];
-        foreach ($list->segments as $item) {
+        foreach ($segments as $item) {
             $cs = new CampaignSegment();
             $cs->name = $item->name;
             $cs->provider = self::PROVIDER_ALIAS;
