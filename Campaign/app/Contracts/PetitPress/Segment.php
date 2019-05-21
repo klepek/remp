@@ -14,9 +14,9 @@ class Segment implements SegmentContract
 {
     const PROVIDER_ALIAS = 'petitpress_segment';
 
-    const ENDPOINT_LIST = '/v1/list-segment';
+    const LIST_ENDPOINT = '/v1/list-segment';
 
-    const ENDPOINT_USERS = '/v1/list-users/%s/';
+    const USERS_ENDPOINT = '/v1/list-users/%s/';
 
     private $client;
 
@@ -43,7 +43,7 @@ class Segment implements SegmentContract
     public function list(): Collection
     {
         try {
-            $response = $this->client->get(self::ENDPOINT_LIST);
+            $response = $this->client->get(self::LIST_ENDPOINT);
         } catch (ConnectException $e) {
             throw new SegmentException("Could not connect to Segment:List endpoint: {$e->getMessage()}");
         }
@@ -91,7 +91,7 @@ class Segment implements SegmentContract
     public function users(CampaignSegment $campaignSegment): Collection
     {
         try {
-            $response = $this->client->get(sprintf(self::ENDPOINT_USERS, $campaignSegment->code));
+            $response = $this->client->get(sprintf(self::USERS_ENDPOINT, $campaignSegment->code));
         } catch (ConnectException $e) {
             throw new SegmentException("Could not connect to Segment:Check endpoint: {$e->getMessage()}");
         }
