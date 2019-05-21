@@ -6,6 +6,8 @@ use App\Contracts\PetitPress\Segment;
 use App\Contracts\SegmentAggregator;
 use App\Contracts\SegmentContract;
 use GuzzleHttp\Client;
+use GuzzleHttp\Cookie\CookieJar;
+use http\Cookie;
 use Illuminate\Foundation\Application;
 use Illuminate\Redis\RedisManager;
 use Illuminate\Support\ServiceProvider;
@@ -30,8 +32,13 @@ class PetitPressSegmentServiceProvider extends ServiceProvider
     public function register()
     {
         $this->app->bind(Segment::class, function (Application $app) {
+            $cookieJar = CookieJar::fromArray([
+                config('services.petit_press_segment.cookie_name') => config('services.petit_press_segment.cookie_value')
+            ], config('services.petit_press_segment.cookie_domain'));
+
             $client = new Client([
-                'base_uri' => config('services.petit_press_segment.base_url')
+                'base_uri' => config('services.petit_press_segment.base_url'),
+                'cookies' => $cookieJar
             ]);
             /** @var RedisManager $redis */
             $redis = $app->make('redis')->connection()->client();

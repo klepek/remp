@@ -45,6 +45,9 @@ return [
 
     'petit_press_segment' => [
         'base_url' => env('PETIT_PRESS_SEGMENT_API_URL'),
+        'cookie_name' => env('PETIT_PRESS_DEVEL_COOKIE_NAME'),
+        'cookie_value' => env('PETIT_PRESS_DEVEL_COOKIE_VALUE'),
+        'cookie_domain' => env('PETIT_PRESS_DEVEL_COOKIE_DOMAIN'),
     ],
 
     'remp' => [
