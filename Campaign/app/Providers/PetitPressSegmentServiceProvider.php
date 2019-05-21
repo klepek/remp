@@ -2,7 +2,7 @@
 
 namespace App\Providers;
 
-use App\Contracts\Crm\Segment;
+use App\Contracts\PetitPress\Segment;
 use App\Contracts\SegmentAggregator;
 use App\Contracts\SegmentContract;
 use GuzzleHttp\Client;
