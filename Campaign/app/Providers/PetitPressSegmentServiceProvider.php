@@ -37,7 +37,7 @@ class PetitPressSegmentServiceProvider extends ServiceProvider
             $redis = $app->make('redis')->connection()->client();
             return new Segment($client, $redis);
         });
-        if (config('services.crm_segment.base_url')) {
+        if (config('services.petit_press_segment.base_url')) {
             $this->app->tag(Segment::class, [SegmentAggregator::TAG]);
         }
     }
