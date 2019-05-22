@@ -97,7 +97,7 @@ class Segment implements SegmentContract
         }
 
         $list = json_decode($response->getBody());
-        $collection = collect($list->users);
+        $collection = collect($list);
         return $collection;
     }
 
