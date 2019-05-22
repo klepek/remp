@@ -16,7 +16,7 @@ class Segment implements SegmentContract
 
     const LIST_ENDPOINT = 'remp/api/v1/list-segments';
 
-    const USERS_ENDPOINT = 'remp/api/v1/list-users/%s/';
+    const USERS_ENDPOINT = 'remp/api/v1/list-users/%s';
 
     private $client;
 
