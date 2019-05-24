@@ -1,5 +1,6 @@
 import Remplib from 'remp/js/remplib'
 import Hash from 'fnv1a'
+import { throttle } from 'lodash';
 
 remplib = typeof(remplib) === 'undefined' ? {} : remplib;
 
@@ -28,6 +29,8 @@ remplib = typeof(remplib) === 'undefined' ? {} : remplib;
             variants: {},
         },
 
+        explicitRefererMedium: null,
+
         uriParams: {},
 
         segmentProvider: "remp_segment",
@@ -48,17 +51,27 @@ remplib = typeof(remplib) === 'undefined' ? {} : remplib;
 
         timeSpentActive: false,
 
+        progressTrackingEnabled: false,
+
+        progressTrackingInterval: 5,
+
+        trackedProgress: [],
+
+        maxPageProgressAchieved: 0,
+
+        articleElementFn: function() { return null },
+
         initialized: false,
 
         init: function(config) {
             if (typeof config.token !== 'string') {
-                throw "remplib: configuration token invalid or missing: "+config.token
+                throw "remplib: configuration token invalid or missing: " + config.token
             }
             if (typeof config.tracker !== 'object') {
-                throw "remplib: configuration tracker invalid or missing: "+config.tracker
+                throw "remplib: configuration tracker invalid or missing: " + config.tracker
             }
             if (typeof config.tracker.url !== 'string') {
-                throw "remplib: configuration tracker.url invalid or missing: "+config.tracker.url
+                throw "remplib: configuration tracker.url invalid or missing: " + config.tracker.url
             }
 
             this.url = config.tracker.url;
@@ -77,7 +90,7 @@ remplib = typeof(remplib) === 'undefined' ? {} : remplib;
 
             if (typeof config.tracker.article === 'object') {
                 if (typeof config.tracker.article.id === 'undefined' || config.tracker.article.id === null) {
-                    throw "remplib: configuration tracker.article.id invalid or missing: "+config.tracker.article.id
+                    throw "remplib: configuration tracker.article.id invalid or missing: " + config.tracker.article.id
                 }
                 this.article.id = config.tracker.article.id;
                 if (typeof config.tracker.article.campaign_id !== 'undefined') {
@@ -98,8 +111,20 @@ remplib = typeof(remplib) === 'undefined' ? {} : remplib;
                 if (typeof config.tracker.article.locked !== 'undefined') {
                     this.article.locked = config.tracker.article.locked;
                 }
+                if (typeof config.articleElementFn !== 'undefined') {
+                    this.articleElementFn = config.articleElementFn
+                }
             } else {
                 this.article = null;
+            }
+
+            let explicitRefererMediumType = typeof config.tracker.explicit_referer_medium;
+            if (explicitRefererMediumType !== 'undefined') {
+                if (explicitRefererMediumType !== 'string') {
+                    console.warn("remplib: value of tracker.explicit_referer_medium has to be string, instead " + explicitRefererMediumType + " provided")
+                } else {
+                    this.explicitRefererMedium = config.tracker.explicit_referer_medium;
+                }
             }
 
             if (typeof config.cookieDomain === 'string') {
@@ -121,6 +146,34 @@ remplib = typeof(remplib) === 'undefined' ? {} : remplib;
             window.addEventListener("campaign_showtime", this.syncOverridableFields);
             window.addEventListener("campaign_showtime", this.syncFlags);
             window.addEventListener("beam_event", this.incrementSegmentRulesCache);
+
+            if (typeof config.tracker.readingProgress === 'object') {
+                if (typeof config.tracker.readingProgress.enabled === 'boolean') {
+                    this.progressTrackingEnabled = config.tracker.readingProgress.enabled;
+                }
+                if (!this.progressTrackingEnabled) {
+                    return;
+                }
+
+                if (typeof config.tracker.readingProgress.interval === 'number') {
+                    if (config.tracker.readingProgress.interval >= 1) {
+                        this.progressTrackingInterval = config.tracker.readingProgress.interval;
+                    } else {
+                        console.warn("remplib cannot be initialized with readingProgress.interval less than 1, keeping default value (" + this.progressTrackingInterval + ")")
+                    }
+                }
+
+                setInterval(function() {
+                    remplib.tracker.sendTrackedProgress()
+                }, (remplib.tracker.progressTrackingInterval * 1000));
+
+                window.addEventListener("scroll", this.scrollProgressEvent);
+                window.addEventListener("resize", this.scrollProgressEvent);
+                window.addEventListener("scroll_progress", this.trackProgress);
+                window.addEventListener("beforeunload", function() {
+                    remplib.tracker.sendTrackedProgress(true)
+                });
+            }
 
             this.initialized = true;
         },
@@ -244,7 +297,7 @@ remplib = typeof(remplib) === 'undefined' ? {} : remplib;
 
         checkInit: function() {
             var that = this;
-            return new Promise(function (resolve, reject) {
+            return new Promise(function(resolve, reject) {
                 var startTime = new Date().getTime();
                 var interval = setInterval(function() {
                     if (that.initialized) {
@@ -402,10 +455,10 @@ remplib = typeof(remplib) === 'undefined' ? {} : remplib;
             window.dispatchEvent(event);
         },
 
-        post: function (path, params) {
+        post: function(path, params) {
             var xmlhttp = new XMLHttpRequest();
             xmlhttp.open("POST", path);
-            xmlhttp.onreadystatechange = function (oEvent) {
+            xmlhttp.onreadystatechange = function(oEvent) {
                 if (xmlhttp.readyState !== 4) {
                     return;
                 }
@@ -417,17 +470,16 @@ remplib = typeof(remplib) === 'undefined' ? {} : remplib;
             xmlhttp.send(JSON.stringify(params));
         },
 
-        checkCookiesEnabled: function () {
+        checkCookiesEnabled: function() {
             document.cookie = "cookietest=1";
             remplib.tracker.cookiesEnabled = document.cookie.indexOf("cookietest=") != -1;
 
             document.cookie = "cookietest=1; expires=Thu, 01-Jan-1970 00:00:01 GMT";
         },
 
-        checkWebsocketsSupport: function () {
+        checkWebsocketsSupport: function() {
             remplib.tracker.websocketsSupported = 'WebSocket' in window || false;
         },
-
         addSystemUserParams: function(params) {
             const d = new Date();
             params["system"] = {"property_token": this.beamToken, "time": d.toISOString()};
@@ -435,7 +487,7 @@ remplib = typeof(remplib) === 'undefined' ? {} : remplib;
                 "id": remplib.getUserId(),
                 "browser_id": remplib.getBrowserId(),
                 "subscriber": remplib.isUserSubscriber(),
-                "url":  window.location.href,
+                "url": window.location.href,
                 "referer": document.referrer,
                 "user_agent": window.navigator.userAgent,
                 "adblock": remplib.usingAdblock,
@@ -453,6 +505,10 @@ remplib = typeof(remplib) === 'undefined' ? {} : remplib;
             };
             params["user"][remplib.rempSessionIDKey] = remplib.getRempSessionID();
             params["user"][remplib.rempPageviewIDKey] = remplib.getRempPageviewID();
+
+            if (this.explicitRefererMedium) {
+                params["user"]["explicit_referer_medium"] = this.explicitRefererMedium;
+            }
 
             var cleanup = function(obj) {
                 Object.keys(obj).forEach(function(key) {
@@ -491,7 +547,7 @@ remplib = typeof(remplib) === 'undefined' ? {} : remplib;
             return item.value;
         },
 
-        parseUriParams: function(){
+        parseUriParams: function() {
             var query = window.location.search.substring(1);
             var vars = query.split('&');
             for (var i = 0; i < vars.length; i++) {
@@ -500,7 +556,7 @@ remplib = typeof(remplib) === 'undefined' ? {} : remplib;
             }
         },
 
-        tickTime: function () {
+        tickTime: function() {
             if (this.timeSpentActive) {
                 this.totalTimeSpent++;
                 this.scheduledSend();
@@ -508,36 +564,56 @@ remplib = typeof(remplib) === 'undefined' ? {} : remplib;
             setTimeout('remplib.tracker.tickTime()', 1000);
         },
 
-        tickStart: function () {
+        tickStart: function() {
             if (!this.timeSpentEnabled) {
                 return;
             }
             this.timeSpentActive = true;
         },
 
-        tickStop: function () {
+        tickStop: function() {
             this.timeSpentActive = false;
         },
 
         bindTickEvents: function() {
             // listen to events to start tracking time
-            document.addEventListener('focus', function () { remplib.tracker.tickStart(); });
-            document.addEventListener('focusin', function () { remplib.tracker.tickStart(); });
-            document.addEventListener('scroll', function () { remplib.tracker.tickStart(); });
-            document.addEventListener('keyup', function () { remplib.tracker.tickStart(); });
-            document.addEventListener('mousemove', function () { remplib.tracker.tickStart(); });
-            document.addEventListener('click', function () { remplib.tracker.tickStart(); });
-            document.addEventListener('touchstart', function () { remplib.tracker.tickStart(); });
+            document.addEventListener('focus', function() {
+                remplib.tracker.tickStart();
+            });
+            document.addEventListener('focusin', function() {
+                remplib.tracker.tickStart();
+            });
+            document.addEventListener('scroll', function() {
+                remplib.tracker.tickStart();
+            });
+            document.addEventListener('keyup', function() {
+                remplib.tracker.tickStart();
+            });
+            document.addEventListener('mousemove', function() {
+                remplib.tracker.tickStart();
+            });
+            document.addEventListener('click', function() {
+                remplib.tracker.tickStart();
+            });
+            document.addEventListener('touchstart', function() {
+                remplib.tracker.tickStart();
+            });
 
 
             // listen to events to stop tracking time
-            document.addEventListener('blur', function () { remplib.tracker.tickStop(); });
-            document.addEventListener('focusout', function () { remplib.tracker.tickStop(); });
+            document.addEventListener('blur', function() {
+                remplib.tracker.tickStop();
+            });
+            document.addEventListener('focusout', function() {
+                remplib.tracker.tickStop();
+            });
 
             this.bindPageVisibilityEvents();
 
             // send data when leaving page
-            window.addEventListener("beforeunload", function () { remplib.tracker.trackTimespent(true); });
+            window.addEventListener("beforeunload", function() {
+                remplib.tracker.trackTimespent(true);
+            });
         },
 
         bindPageVisibilityEvents: function() {
@@ -558,7 +634,7 @@ remplib = typeof(remplib) === 'undefined' ? {} : remplib;
                 visibilityChange = "webkitvisibilitychange";
             }
 
-            document.addEventListener(visibilityChange, function () {
+            document.addEventListener(visibilityChange, function() {
                 if (document[hidden]) {
                     remplib.tracker.tickStop();
                 } else {
@@ -568,10 +644,86 @@ remplib = typeof(remplib) === 'undefined' ? {} : remplib;
         },
 
         scheduledSend: function() {
-            let logInterval = Math.round(0.3*(Math.sqrt(this.totalTimeSpent))) * 5;
+            let logInterval = Math.round(0.3 * (Math.sqrt(this.totalTimeSpent))) * 5;
             if (0 === this.totalTimeSpent % logInterval) {
                 this.trackTimespent();
             }
+        },
+
+        pageProgress: function() {
+            const root = remplib.tracker.getRootElement();
+            const scrollTop = window.pageYOffset || root.scrollTop || document.body.scrollTop || 0;
+            return (scrollTop + root.clientHeight) / root.scrollHeight;
+        },
+
+        getRootElement: function() {
+            if (document.documentElement.clientHeight === document.documentElement.scrollHeight) {
+                // if documentElement has CSS property setting height to 100%, it's affecting client height
+                // body is used as a safe fallback in such scenario
+                return document.body;
+            }
+            return document.documentElement;
+        },
+
+        getElementOffsetTop: function(el) {
+            const rect = el.getBoundingClientRect();
+            return rect.top + (window.pageYOffset || document.documentElement.scrollTop)
+        },
+
+        scrollProgressEvent: throttle(function() {
+            const article = remplib.tracker.articleElementFn(),
+                payload = {pageScrollRatio: remplib.tracker.pageProgress(), timestamp: new Date()};
+
+            if (article) {
+                const root = remplib.tracker.getRootElement();
+                const scrollTop = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+                payload.articleScrollRatio = Math.min(1, Math.max(0,
+                    (scrollTop + root.clientHeight - remplib.tracker.getElementOffsetTop(article)) / article.scrollHeight
+                ));
+            }
+
+            const event = new CustomEvent("scroll_progress", {
+                detail: payload,
+            });
+
+            window.dispatchEvent(event);
+        }, 250),
+
+        trackProgress: function(currentEvent) {
+            // maybe do here some sort of fast scrolling check in the future if is needed
+
+            if (currentEvent.detail.pageScrollRatio <= remplib.tracker.maxPageProgressAchieved) {
+                return;
+            }
+
+            remplib.tracker.maxPageProgressAchieved = currentEvent.detail.pageScrollRatio;
+
+            remplib.tracker.trackedProgress.push(currentEvent);
+        },
+
+        sendTrackedProgress: function(isUnloading = false) {
+            const lastPosition = remplib.tracker.trackedProgress[remplib.tracker.trackedProgress.length - 1];
+
+            if (!lastPosition) {
+                return;
+            }
+
+            let params = {
+                "action": "progress",
+                "article": remplib.tracker.article,
+                "progress": {
+                    "page_ratio": lastPosition.detail.pageScrollRatio,
+                    "unload": isUnloading
+                }
+            };
+
+            if (typeof lastPosition.detail.articleScrollRatio !== 'undefined') {
+                params.progress.article_ratio = lastPosition.detail.articleScrollRatio;
+            }
+
+            params = this.addSystemUserParams(params);
+            remplib.tracker.post(this.url + "/track/pageview", params);
+            remplib.tracker.trackedProgress = [];
         }
     };
 
