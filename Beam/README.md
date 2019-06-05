@@ -43,6 +43,7 @@ php artisan db:seed
 - PHP ^7.1.3
 - MySQL ^5.7
 - Redis ^3.2
+- Elastic ^6.8.1
 
 ### Technical feature description
 
