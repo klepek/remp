@@ -1,0 +1,2 @@
+* * * * * cd Campaign && php artisan schedule:run >> storage/logs/schedule.log 2>&1
+0 * * * * cd Camoaign && php artisan campaigns:aggregate-stats >> storage/logs/aggregate_stats.log 2>&1
