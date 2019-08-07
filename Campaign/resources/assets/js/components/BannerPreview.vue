@@ -93,7 +93,9 @@
                 :forcedPosition="forcedPosition"
 
                 :mainText="collapsibleBarTemplate.mainText"
+                :headerText="collapsibleBarTemplate.headerText"
                 :collapseText="collapsibleBarTemplate.collapseText"
+                :expandText="collapsibleBarTemplate.expandText"
                 :buttonText="collapsibleBarTemplate.buttonText"
                 :backgroundColor="collapsibleBarTemplate.backgroundColor"
                 :textColor="collapsibleBarTemplate.textColor"
@@ -150,8 +152,29 @@
                 :closeText="closeText"
                 :transition="transition"
                 :displayType="displayType"
+                :adminPreview="adminPreview"
         >
         </overlay-rectangle-preview>
+
+        <html-overlay-preview v-if="template === 'html_overlay'"
+              :alignmentOptions="alignmentOptions"
+              :show="visible"
+              :uuid="uuid"
+              :campaignUuid="campaignUuid"
+
+              :textAlign="htmlOverlayTemplate.textAlign"
+              :textColor="htmlOverlayTemplate.textColor"
+              :fontSize="htmlOverlayTemplate.fontSize"
+              :backgroundColor="htmlOverlayTemplate.backgroundColor"
+              :text="htmlOverlayTemplate.text"
+              :css="htmlOverlayTemplate.css"
+
+              :targetUrl="targetUrl"
+              :closeable="closeable"
+              :closeText="closeText"
+              :transition="transition"
+              :displayType="displayType"
+        ></html-overlay-preview>
     </div>
 </template>
 
@@ -163,6 +186,9 @@
     import CollapsibleBarPreview from "./previews/CollapsibleBar";
     import ShortMessagePreview from "./previews/ShortMessage";
     import OverlayRectanglePreview from "./previews/OverlayRectangle";
+    import HtmlOverlayPreview from "./previews/HtmlOverlay";
+
+    import lib from "remp/js/remplib.js";
 
     const props = [
         "name",
@@ -184,6 +210,7 @@
         "show",
 
         "variables",
+        "urlParams",
 
         "mediumRectangleTemplate",
         "barTemplate",
@@ -191,12 +218,19 @@
         "htmlTemplate",
         "shortMessageTemplate",
         "overlayRectangleTemplate",
+        "htmlOverlayTemplate",
 
         "alignmentOptions",
         "dimensionOptions",
         "positionOptions",
 
         "variantUuid",
+
+        "adminPreview",
+
+        "js",
+        "jsIncludes",
+        "cssIncludes",
     ];
 
     export default {
@@ -207,6 +241,7 @@
             CollapsibleBarPreview,
             ShortMessagePreview,
             OverlayRectanglePreview,
+            HtmlOverlayPreview,
         },
         name: 'banner-preview',
         props: props,
@@ -223,6 +258,34 @@
             });
 
             this.visible = this.show;
+
+            if (this.cssIncludes) {
+                for (let ii = 0; ii < this.cssIncludes.length; ii++) {
+                    lib.loadStyle(this.cssIncludes[ii]);
+                }
+            }
+
+            let vm = this,
+                js = this.js,
+                loadedScriptsCount = 0;
+
+            if (this.jsIncludes) {
+                for (let ii = 0; ii < this.jsIncludes.length; ii++) {
+                    if (!this.jsIncludes[ii]) {
+                        loadedScriptsCount++;
+                        continue;
+                    }
+
+                    lib.loadScript(this.jsIncludes[ii], function () {
+                        loadedScriptsCount++;
+                        if (loadedScriptsCount === vm.jsIncludes.length) {
+                            vm.runCustomJavascript(js);
+                        }
+                    });
+                }
+            } else {
+                this.runCustomJavascript(js);
+            }
         },
         data: () => ({
             visible: false,
@@ -254,6 +317,15 @@
                 if (this.variantUuid) {
                     url += "&banner_variant=" + encodeURIComponent(this.variantUuid);
                 }
+
+                if (this.urlParams) {
+                    for (let param in this.urlParams) {
+                        if (this.urlParams.hasOwnProperty(param)) {
+                            url += "&" + encodeURIComponent(param) + '=' + encodeURIComponent(this.urlParams[param]())
+                        }
+                    }
+                }
+
                 return url;
             },
         },
@@ -329,6 +401,17 @@
                 }
                 return false;
             },
+            runCustomJavascript: function (js) {
+                this.$nextTick(() => {
+                    setTimeout(function() {
+                        try {
+                            eval('(function() {' + js + '})()');
+                        } catch {
+                            console.warn("unable to execute custom banner JS:", js);
+                        }
+                    }, 0);
+                }, this)
+            }
         }
     }
 </script>

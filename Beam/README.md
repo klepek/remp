@@ -43,7 +43,21 @@ php artisan db:seed
 - PHP ^7.1.3
 - MySQL ^5.7
 - Redis ^3.2
-- Elastic ^6.8.1
+- Segments API (see #segments-go)
+
+After clean installation Beam Admin and Segments API would throw errors because the underlying database wouldn't have inidices for tracked events created. Docker installation handles this for you, but if you use manual installation, please run the following set of commands against your Elasticsearch instance.
+
+```bash
+curl -XPUT -H "Content-Type: application/json" elasticsearch:9200/commerce -d '{"mappings": {"_doc": {"properties": {"revenue": {"type": "double"}}}}}'
+curl -XPUT -H "Content-Type: application/json" elasticsearch:9200/events -d '{"mappings": {"_doc": {}}}'
+curl -XPUT -H "Content-Type: application/json" elasticsearch:9200/pageviews -d '{"mappings": {"_doc": {}}}'
+curl -XPUT -H "Content-Type: application/json" elasticsearch:9200/pageviews_time_spent -d '{"mappings": {"_doc": {}}}'
+curl -XPUT -H "Content-Type: application/json" elasticsearch:9200/pageviews_progress -d '{"mappings": {"_doc": {}}}'
+curl -XPUT -H "Content-Type: application/json" elasticsearch:9200/concurrents_by_browser -d '{"mappings": {"_doc": {}}}'
+curl -XPUT -H "Content-Type: application/json" elasticsearch:9200/entities -d '{"mappings": {"_doc": {}}}'
+```
+
+*These commands need to be run just once. Every further execution would result in BadRequest returned by Elasticsearch that inidices or document types are already present.*
 
 ### Technical feature description
 
@@ -322,7 +336,7 @@ data related to Beam (e.g. A/B testing of titles).
             ],
             "url": "http://example.com/74565321", // Public and valid URL of the article,
             "authors": [ // Optional
-                "John Snow" // Name of the author
+                "Jon Snow" // Name of the author
             ],
             "sections": [ // Optional
                 "Opinions" // Name of the section
@@ -333,7 +347,10 @@ data related to Beam (e.g. A/B testing of titles).
 }
 ```
 
-##### *Example:*
+##### *Examples:*
+
+<details>
+<summary>curl</summary>
 
 ```shell
 curl -X POST \
@@ -353,7 +370,7 @@ curl -X POST \
             ],
             "url": "http://example.com/74565321", 
             "authors": [ 
-                "John Snow" 
+                "Jon Snow" 
             ],
             "sections": [
                 "Opinions" 
@@ -364,7 +381,52 @@ curl -X POST \
 }'
 ```
 
-Response:
+</details>
+
+<details>
+<summary>raw PHP</summary>
+
+```php
+$payload = [
+    "articles" => [
+        [
+            "external_id" => "74565321",
+            "property_uuid" => "1a8feb16-3e30-4f9b-bf74-20037ea8505a",
+            "title" => "10 things you need to know",
+            "titles" => [
+                "10 things you need to know",
+                "10 things everyone hides from you"
+            ],
+            "url" => "http://example.com/74565321",
+            "authors" => [
+                "Jon Snow"
+            ],
+            "sections" => [
+                "Opinions"
+            ],
+            "published_at" => "2018-06-05T06:03:05Z",
+        ]
+    ]
+];
+$jsonPayload = json_encode($payload);
+$context = stream_context_create([
+        'http' => [
+            'method' => 'POST',
+            'header' => "Content-Type: type=application/json\r\n"
+                . "Accept: application/json\r\n"
+                . "Content-Length: " . strlen($jsonPayload) . "\r\n"
+                . "Authorization: Bearer XXX",
+            'content' => $jsonPayload,
+        ]
+    ]
+);
+$response = file_get_contents("http://beam.remp.press/api/articles/upsert ", false, $context);
+// process response (raw JSON string)
+```
+
+</details>
+
+##### *Response:*
 
 ```json5
 {
@@ -387,7 +449,7 @@ Response:
             "updated_at": "2019-05-17 11:43:04",
             "authors": [
                 {
-                    "name": "John Snow",
+                    "name": "Jon Snow",
                     "created_at": "2019-05-17 11:43:04",
                     "updated_at": "2019-05-17 11:43:04"
                 }
@@ -440,7 +502,10 @@ tracked via Tracker API (see `/track/commerce` definition in Tracker's `swagger.
 }
 ```
 
-##### *Example*:
+##### *Examples*:
+
+<details>
+<summary>curl</summary>
 
 ```shell
 curl -X POST \
@@ -462,7 +527,43 @@ curl -X POST \
 }'
 ```
 
-Response:
+</details>
+
+<details>
+<summary>raw PHP</summary>
+
+```php
+$payload = [
+    "conversions" => [
+        [
+            "article_external_id" => "74565321",
+            "transaction_id" => "8743320112",
+            "amount" => 17.99,
+            "currency" => "EUR",
+            "paid_at" => "2018-06-05T12:03:05Z",
+            "user_id" => "74412"
+        ]
+    ]
+];
+$jsonPayload = json_encode($payload);
+$context = stream_context_create([
+        'http' => [
+            'method' => 'POST',
+            'header' => "Content-Type: type=application/json\r\n"
+                . "Accept: application/json\r\n"
+                . "Content-Length: " . strlen($jsonPayload) . "\r\n"
+                . "Authorization: Bearer XXX",
+            'content' => $jsonPayload,
+        ]
+    ]
+);
+$response = file_get_contents("http://beam.remp.press/api/conversions/upsert ", false, $context);
+// process response (raw JSON string)
+```
+
+</details>
+
+##### *Response:*
 
 ```json5
 {
@@ -482,7 +583,6 @@ Response:
     ]
 }
 ```
-
 
 ### Scheduled events
 
@@ -624,20 +724,21 @@ var rempConfig = {
     
     // optional, controls where cookies (UTM parameters of visit) are stored
     cookieDomain: ".remp.press",
+    
+    // optional, article details if pageview is on the article
+    article: {
+        id: String, // required, ID of article in your CMS
+        author_id: String, // optional, name of the author
+        category: String, // optional, category/section of the article
+        locked: Boolean, // optional, flag whether content was locked at the time of visit for this pageview
+        tags: [String, String, String], // optional, any tags associated with the article
+        elementFn: Function // callback returning DOM element containing article content
+    },
             
     // required, Tracker API specific options          
     tracker: {
         // required, URL location of BEAM Tracker
         url: "http://tracker.beam.remp.press",
-        
-        // optional, article details if pageview is on the article
-        article: {
-            id: String, // required, ID of article in your CMS
-            author_id: String, // optional, name of the author
-            category: String, // optional, category/section of the article
-            locked: Boolean, // optional, flag whether content was locked at the time of visit for this pageview
-            tags: [String, String, String] // optional, any tags associated with the article
-        },
         
         // optional time spent measuring (default value `false`)
         // if enabled, tracks time spent on current page
@@ -686,6 +787,27 @@ You can enable the tracking by setting `rempConfig.tracker.readingProgress = { e
 
 ##### JS tracking interface
 
+Note: The *source* object is referenced as a parameter in the following API calls. Here's the list of parameters
+that might be appended to target URLs within REMP tools (Campaign banner, emails) and that need to be tracked
+in the functions bellow to properly track conversions against created campaigns.
+
+The expected value is always as follows (all are optional):
+
+```
+{
+  "utm_medium": String,
+  "utm_campaign": String,
+  "utm_source": String,
+  "utm_content": String,
+  "banner_variant": String
+}
+```
+
+If the *source* is not provided, JS library tries to load the values from local storage which were stored last time
+they appeared in the visited URL.
+
+Here's the list of supported tracking methods:
+
 * `remplib.tracker.trackEvent(category, action, tags, fields, source)`: tracks generic events to Beam
     * `category`: Category of event (e.g. `"spring promo"`).
     * `action`: Actual event name (e.g. `"click"`).
@@ -693,10 +815,28 @@ You can enable the tracking by setting `rempConfig.tracker.readingProgress = { e
     * `fields`: Extra metadata you want to track with event (e.g. `{foo: bar}`)).
     * `source`: Object with utm parameters (e.g. `{ utm_campaign: "foo" }`). 
     
-* `remplib.tracker.trackChekout(funnelId)`: tracks checkout commerce event - indicating that user is summarizing his order 
+* `remplib.tracker.trackCheckout(funnelId)`: tracks checkout commerce event - indicating that user is summarizing the order 
     * `funnelId`: Reference to funnel bringing user to checkout page. You can use IDs if your system contains referencable
     funnels or string keys otherwise. If your system doesn't support funnels and you don't need to differentiate them,
     use `"default"`.
+    
+* `remplib.tracker.trackCheckoutWithSource: function(funnelId, article, source)`: tracks checkout commerce event with custom article source - indicating that user is summarizing his order 
+	* `funnelId`: Reference to funnel bringing user to checkout page. You can use IDs if your system contains
+	referencable funnels or string keys otherwise. If your system doesn't support funnels and you don't need
+	to differentiate them and `default` is a recommended value.
+    * `article`: Object with info about current article (it is safe to reuse `remplib.tracker.article` 
+    if you don't want to make any changes).
+		```
+		{
+			id: String, // required, ID of article in your CMS
+			author_id: String, // optional, name of the author
+			category: String, // optional, category/section of the article
+			locked: Boolean, // optional, flag whether content was locked at the time of visit for this pageview
+			tags: [String, String, String], // optional, any tags associated with the article
+		}
+		```
+	
+    * `source`: Object with utm parameters (e.g. `{ utm_campaign: "foo" }`).
     
 * `remplib.tracker.trackPayment(transactionId, amount, currency, productIds)`: tracks commerce payment event - indicating
 that the payment has started (user was redirected to payment gateway)
@@ -705,11 +845,20 @@ that the payment has started (user was redirected to payment gateway)
     * `currency`: String currency (e.g. `EUR`)
     * `productIds`: List of purchased products (e.g. `["product_1"]`)
     
-* `remplib.tracker.trackPurchase(transactionId, amount, currency, productIds)`: tracks commerce purchase event - indicating
-that the payment was successful
+* `remplib.tracker.trackPaymentWithSource: function(transactionId, amount, currency, productIds, article, source)`: 
+tracks commerce payment event with custom article and source - indicating that the payment has started
+(user was redirected to payment gateway)
 
-* `remplib.tracker.trackRefund(transactionId, amount, currency, productIds)`: tracks commerce refund event - indicating
-that confirmed payment (one that had *purchase* event) was refunded
+* `remplib.tracker.trackPurchase(transactionId, amount, currency, productIds)`: tracks commerce purchase event - 
+indicating that the payment was successful
+
+* `remplib.tracker.trackPurchaseWithSource: function(transactionId, amount, currency, productIds, article, source)`:
+tracks commerce purchase event with custom article and source - indicating that the payment was successful
+
+* `remplib.tracker.trackRefund(transactionId, amount, currency, productIds)`: tracks commerce refund event -
+indicating that confirmed payment (one that had *purchase* event) was refunded
+
+* `remplib.tracker.trackRefundWithSource(transactionId, amount, currency, productIds, article, source)`: tracks commerce refund event with custom article and source - indicating that confirmed payment (one that had *purchase* event) was refunded
 
 #### Build Dependencies
 
@@ -788,7 +937,9 @@ rempConfig.iota = {
     articleSelector: String,
     // required: callback for articleId extraction out of matched element
     idCallback: Function, // function (matchedElement) {}
-    // optional: callback for selecting element where the stats will be placed as next sibling; if not present, stats are appended as next sibling to matchedElement
+    // optional: callback for selecting element where the stats will be placed;
+    // if not present, stats are appended as next sibling to matchedElement
+    // stats are positioned absolutely, so they need a relative parent
     targetElementCallback: Function, // function (matchedElement) {}
     // optional: HTTP headers to be used in API calls 
     httpHeaders: Object

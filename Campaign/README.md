@@ -78,7 +78,7 @@ into one big JS snippet including Campaign and Beam functionallity.
         "campaign": "init",
         "tracker": "init trackEvent trackPageview trackCommerce",
         "iota": "init"
-    }
+    };
 
     Object.keys(mockFuncs).forEach(function (key) {
         if (!win.remplib[key]) {
@@ -118,6 +118,16 @@ var rempConfig = {
         // required, URL host of REMP Campaign
         url: "http://campaign.remp.press",
         
+        // Additional params that will be appended links within displayed banner
+        //
+        // Key represents variable name, value should be defined as callback returning string response.
+        // Following example will be appended as "&foo=bar&baz=XXX".
+        // If the value is not function, remplib validation will throw an error and won't proceed further.
+        bannerUrlParams:  {
+            "foo": function() { return "bar" },
+            "baz": function() { return "XXX" }
+        },
+        
         variables: {
             // variables replace template placeholders in banners,
             // e.g. {{ email }} -> foo@example.com
@@ -129,7 +139,7 @@ var rempConfig = {
                 value: function() {
                     return "foo@example.com"
                 }
-            }
+            },
         }
     }
     

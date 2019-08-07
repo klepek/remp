@@ -84,23 +84,22 @@ services:
 			- register(Remp\MailerModule\Commands\DemoSeedCommand())
 			- register(Remp\MailerModule\Commands\ProcessJobStatsCommand())
 			- register(Remp\MailerModule\Commands\AggregateMailTemplateStatsCommand())
-			- register(Remp\MailerModule\Commands\ProcessTemplateStatsCommand())
 			- register(Remp\MailerModule\Commands\HeartbeatCommand())
 			- register(Remp\MailerModule\Commands\MailTypeStatsCommand())
 			- register(@hermesWorker)
 			- setCatchExceptions(true)
 
+	# Loggers
 	commandsLogger:
 		class: Monolog\Logger('commands-logger')
+	mailProcessLogger:
+		class: Monolog\Logger('mail-process-logger')
+	hermesLogger:
+		class: Monolog\Logger('hermes-logger')
 
 	dateFormatterFactory:
 		class: Remp\MailerModule\Formatters\DateFormatterFactory(%locale%, %timezone%)
 
-	hermesLogger:
-		class: Monolog\Logger('hermes-logger')
-		setup:
-			- pushHandler(Monolog\Handler\StreamHandler("%appDir%/../log/hermes-log.txt"))
-			- pushHandler(Monolog\Handler\ErrorLogHandler())
 	hermesRestart: Tomaj\Hermes\Restart\SharedFileRestart(%hermes.restart_file_path%)
 	hermesDispatcher:
 		class: Tomaj\Hermes\Dispatcher(Remp\MailerModule\Hermes\RedisDriver(), @hermesLogger, @hermesRestart)
@@ -108,6 +107,8 @@ services:
 		class: Tomaj\Hermes\Emitter(Remp\MailerModule\Hermes\RedisDriver(), @hermesLogger)
 	- Remp\MailerModule\Hermes\HermesTasksQueue(%redis.host%, %redis.port%, %redis.db%)
 	- Remp\MailerModule\Repository\HermesTasksRepository
+
+	redisCache: Remp\MailerModule\RedisCache(%redis.host%, %redis.port%, %redis.db%)
 	hermesWorker:
 		class: Remp\MailerModule\Commands\HermesWorkerCommand
 		setup:
@@ -153,7 +154,7 @@ services:
 
 	- Remp\MailerModule\Config\Config
 	- Remp\MailerModule\Sender
-	- Remp\MailerModule\Job\BatchEmailGenerator
+	- Remp\MailerModule\Job\BatchEmailGenerator(@mailProcessLogger)
 	- Remp\MailerModule\Job\MailCache(%redis.host%, %redis.port%, %redis.db%)
 	- Remp\MailerModule\Auth\AutoLogin
 
@@ -166,6 +167,7 @@ services:
 			- enableGlobalPreflight()
 			- addApiHandler(\Tomaj\NetteApi\EndpointIdentifier('POST', 1, 'users', 'subscribe'), \Remp\MailerModule\Api\v1\Handlers\Users\SubscribeHandler(), \Tomaj\NetteApi\Authorization\BearerTokenAuthorization())
 			- addApiHandler(\Tomaj\NetteApi\EndpointIdentifier('POST', 1, 'users', 'un-subscribe'), \Remp\MailerModule\Api\v1\Handlers\Users\UnSubscribeHandler(), \Tomaj\NetteApi\Authorization\BearerTokenAuthorization())
+			- addApiHandler(\Tomaj\NetteApi\EndpointIdentifier('POST', 1, 'users', 'bulk-subscribe'), \Remp\MailerModule\Api\v1\Handlers\Users\BulkSubscribeHandler(), \Tomaj\NetteApi\Authorization\BearerTokenAuthorization())
 			- addApiHandler(\Tomaj\NetteApi\EndpointIdentifier('POST', 1, 'users', 'check-token'), \Remp\MailerModule\Api\v1\Handlers\Users\CheckTokenHandler(), \Tomaj\NetteApi\Authorization\NoAuthorization())
 			- addApiHandler(\Tomaj\NetteApi\EndpointIdentifier('POST', 1, 'users', 'email-changed'), \Remp\MailerModule\Api\v1\Handlers\Users\EmailChangedHandler(), \Tomaj\NetteApi\Authorization\BearerTokenAuthorization())
 			- addApiHandler(\Tomaj\NetteApi\EndpointIdentifier('POST', 1, 'users', 'user-registered'), \Remp\MailerModule\Api\v1\Handlers\Users\UserRegisteredHandler(), \Tomaj\NetteApi\Authorization\BearerTokenAuthorization())
@@ -177,6 +179,7 @@ services:
 			- addApiHandler(\Tomaj\NetteApi\EndpointIdentifier('POST', 1, 'mailers', 'templates'), \Remp\MailerModule\Api\v1\Handlers\Mailers\MailCreateTemplateHandler(), \Tomaj\NetteApi\Authorization\BearerTokenAuthorization())
 			- addApiHandler(\Tomaj\NetteApi\EndpointIdentifier('POST', 1, 'mailers', 'jobs'), \Remp\MailerModule\Api\v1\Handlers\Mailers\MailJobCreateApiHandler(), \Tomaj\NetteApi\Authorization\BearerTokenAuthorization())
 			- addApiHandler(\Tomaj\NetteApi\EndpointIdentifier('GET', 1, 'mailers', 'mail-types'), \Remp\MailerModule\Api\v1\Handlers\Mailers\MailTypesListingHandler(), \Tomaj\NetteApi\Authorization\BearerTokenAuthorization())
+			- addApiHandler(\Tomaj\NetteApi\EndpointIdentifier('POST', 1, 'mailers', 'mail-type-upsert'), \Remp\MailerModule\Api\v1\Handlers\Mailers\MailTypeUpsertHandler(), \Tomaj\NetteApi\Authorization\BearerTokenAuthorization())
 			- addApiHandler(\Tomaj\NetteApi\EndpointIdentifier('GET', 1, 'segments', 'list'), \Remp\MailerModule\Api\v1\Handlers\Segments\SegmentsListingHandler(), \Tomaj\NetteApi\Authorization\BearerTokenAuthorization())
 			- addApiHandler(\Tomaj\NetteApi\EndpointIdentifier('POST', 2, 'mailers', 'mailgun'), \Remp\MailerModule\Api\v2\Handlers\Mailers\MailgunEventsHandler(), \Tomaj\NetteApi\Authorization\NoAuthorization())
 	# Generator
@@ -227,6 +230,7 @@ services:
 	- Remp\MailerModule\Components\GeneratorWidgets\Widgets\NewsfilterWidget
 	- Remp\MailerModule\Components\GeneratorWidgets\Widgets\NovydenikNewsfilterWidget
 	- Remp\MailerModule\Components\GeneratorWidgets\Widgets\MediaBriefingWidget
+	- Remp\MailerModule\Components\GeneratorWidgets\Widgets\DennikeWidget
 	- Remp\MailerModule\Components\GeneratorWidgets\Widgets\TldrWidget
 	- Remp\MailerModule\Components\GeneratorWidgets\Widgets\MMSWidget
 
@@ -246,6 +250,7 @@ services:
 	- Remp\MailerModule\Forms\NovydenikNewsfilterTemplateFormFactory('users_with_any_subscriptions', 'users-without-subscription')
 	- Remp\MailerModule\Forms\NewsfilterTemplateFormFactory('users_with_active_subscriptions', 'users_without_actual_subscriptions')
 	- Remp\MailerModule\Forms\MediaBriefingTemplateFormFactory('users_with_active_subscriptions', 'users_without_actual_subscriptions')
+	- Remp\MailerModule\Forms\DennikeTemplateFormFactory('users_with_active_subscriptions', 'users_without_actual_subscriptions')
 	- Remp\MailerModule\Forms\TldrTemplateFormFactory('users_with_active_subscriptions', 'users_without_actual_subscriptions')
 	- Remp\MailerModule\Forms\MMSTemplateFormFactory('users_with_active_subscriptions', 'users_without_actual_subscriptions')
 

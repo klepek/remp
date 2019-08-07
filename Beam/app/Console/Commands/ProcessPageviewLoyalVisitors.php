@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Segment;
+use App\SegmentGroup;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Remp\Journal\AggregateRequest;
@@ -19,6 +20,11 @@ class ProcessPageviewLoyalVisitors extends Command
         ini_set('memory_limit', '-1');
         $days = $this->option('days') ?? 30;
 
+        if (!$days) {
+            $this->line("No days to process, exiting.");
+            return;
+        }
+
         $bar = $this->output->createProgressBar($days);
         $bar->setFormat('%message%: %current%/%max% [%bar%] %percent:3s%% %elapsed:6s%/%estimated:-6s% %memory:6s%');
         $bar->setMessage('Extracting aggregated pageview data (days)');
@@ -34,7 +40,7 @@ class ProcessPageviewLoyalVisitors extends Command
             $request = new AggregateRequest('pageviews', 'load');
             $request->setTimeAfter($timeAfter);
             $request->setTimeBefore($timeBefore);
-            $request->addFilter('_article', '1');
+            $request->addFilter('_article', 'true');
             $request->addGroup("user_id", "browser_id");
 
             $pageviews = collect($journalContract->count($request));
@@ -68,6 +74,7 @@ class ProcessPageviewLoyalVisitors extends Command
                 }
             }
             $bar->advance();
+            break;
         }
 
         $bar->finish();
@@ -94,6 +101,7 @@ class ProcessPageviewLoyalVisitors extends Command
             'name' => "{$treshold}+ article views in {$days} days",
             'code' => $segmentCode,
             'active' => true,
+            'segment_group_id' => SegmentGroup::getByCode(SegmentGroup::CODE_REMP_SEGMENTS)->id,
         ]);
         $segment->rules()->create([
             'timespan' => $days*24*60,

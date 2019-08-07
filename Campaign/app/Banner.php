@@ -13,6 +13,7 @@ class Banner extends Model
     const TEMPLATE_HTML = 'html';
     const TEMPLATE_MEDIUM_RECTANGLE = 'medium_rectangle';
     const TEMPLATE_OVERLAY_RECTANGLE = 'overlay_rectangle';
+    const TEMPLATE_HTML_OVERLAY = 'html_overlay';
     const TEMPLATE_BAR = 'bar';
     const TEMPLATE_COLLAPSIBLE_BAR = 'collapsible_bar';
     const TEMPLATE_SHORT_MESSAGE = 'short_message';
@@ -31,10 +32,15 @@ class Banner extends Model
         'display_type',
         'target_selector',
         'template',
+        'js',
+        'js_includes',
+        'css_includes',
     ];
 
     protected $casts = [
         'closeable' => 'boolean',
+        'js_includes' => 'array',
+        'css_includes' => 'array',
     ];
 
     protected $dateFormat = 'Y-m-d H:i:s';
@@ -116,6 +122,11 @@ class Banner extends Model
         return $this->hasOne(OverlayRectangleTemplate::class);
     }
 
+    public function htmlOverlayTemplate()
+    {
+        return $this->hasOne(HtmlOverlayTemplate::class);
+    }
+
     public function barTemplate()
     {
         return $this->hasOne(BarTemplate::class);
@@ -154,6 +165,8 @@ class Banner extends Model
                 return 'shortMessageTemplate';
             case self::TEMPLATE_OVERLAY_RECTANGLE:
                 return 'overlayRectangleTemplate';
+            case self::TEMPLATE_HTML_OVERLAY:
+                return 'htmlOverlayTemplate';
             default:
                 throw new \Exception('Unhandled banner template access: ' . $this->template);
         }

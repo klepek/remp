@@ -18,9 +18,12 @@ class ArticleDetailsController extends Controller
 
     private $journal;
 
+    private $journalHelper;
+
     public function __construct(JournalContract $journal)
     {
         $this->journal = $journal;
+        $this->journalHelper = new JournalHelpers($journal);
     }
 
     public function variantsHistogram(Article $article, Request $request)
@@ -35,7 +38,7 @@ class ArticleDetailsController extends Controller
         $groupBy = $type === 'title' ? 'title_variant' : 'image_variant';
 
         $tz = new \DateTimeZone($request->get('tz', 'UTC'));
-        $journalInterval = JournalInterval::from($tz, $request->get('interval'), $article);
+        $journalInterval = new JournalInterval($tz, $request->get('interval'), $article);
 
         $data = $this->histogram($article, $journalInterval, $groupBy, function (AggregateRequest $request) {
             $request->addFilter('derived_referer_medium', 'internal');
@@ -93,7 +96,7 @@ class ArticleDetailsController extends Controller
         $eventOptions = $request->get('events', []);
 
         $tz = new \DateTimeZone($request->get('tz', 'UTC'));
-        $journalInterval = JournalInterval::from($tz, $request->get('interval'), $article);
+        $journalInterval = new JournalInterval($tz, $request->get('interval'), $article);
 
         $data = $this->histogram($article, $journalInterval, 'derived_referer_medium');
         $data['colors'] = Colors::refererMediumTagsToColors($data['tags']);
@@ -170,68 +173,159 @@ class ArticleDetailsController extends Controller
         ];
     }
 
-    public function show(Article $article, Request $request)
+    public function showByParameter(Request $request, Article $article = null)
     {
-        $timeBefore = Carbon::now();
-        $timeAfter = $article->published_at;
+        if (!$article) {
+            $externalId = $request->input('external_id');
+            $url = $request->input('url');
 
-        $uniqueRequest = new AggregateRequest('pageviews', 'load');
-        $uniqueRequest->setTimeAfter($timeAfter);
-        $uniqueRequest->setTimeBefore($timeBefore);
-        $uniqueRequest->addGroup('article_id', 'title_variant', 'image_variant');
-        $uniqueRequest->addFilter('article_id', $article->external_id);
-        $results = collect($this->journal->unique($uniqueRequest));
-
-        $titleVariants = [];
-        $imageVariants = [];
-        foreach ($results as $result) {
-            if (isset($result->tags->title_variant)) {
-                $titleVariants[$result->tags->title_variant] = true;
-            }
-
-            if (isset($result->tags->image_variant)) {
-                $imageVariants[$result->tags->image_variant] = true;
+            if ($externalId) {
+                $article = Article::where('external_id', $externalId)->first();
+                if (!$article) {
+                    abort(404, 'No article found for given external_id parameter');
+                }
+            } elseif ($url) {
+                $article = Article::where('url', $url)->first();
+                if (!$article) {
+                    abort(404, 'No article found for given URL parameter');
+                }
+            } else {
+                abort(404, 'Please specify either article ID, external_id or URL');
             }
         }
 
-        $uniqueBrowsersCount = $results->sum('count');
+        return redirect()->route('articles.show', ['id' => $article->id]);
+    }
 
-        $conversionRate = $uniqueBrowsersCount == 0 ? 0 : ($article->conversions()->count() / $uniqueBrowsersCount) * 100;
+    public function show(Request $request, Article $article = null)
+    {
+        if (!$article) {
+            $externalId = $request->input('external_id');
+            $url = $request->input('url');
 
-        $conversionsSum = collect();
+            if ($externalId) {
+                $article = Article::where('external_id', $externalId)->first();
+                if (!$article) {
+                    abort(404, 'No article found for given external_id parameter');
+                }
+            } elseif ($url) {
+                $article = Article::where('url', $url)->first();
+                if (!$article) {
+                    abort(404, 'No article found for given URL parameter');
+                }
+            } else {
+                abort(404, 'Please specify either article ID, external_id or URL');
+            }
+        }
+
+        $conversionsSums = collect();
         foreach ($article->conversions as $conversions) {
-            if (!$conversionsSum->has($conversions->currency)) {
-                $conversionsSum[$conversions->currency] = 0;
+            if (!$conversionsSums->has($conversions->currency)) {
+                $conversionsSums[$conversions->currency] = 0;
             }
-            $conversionsSum[$conversions->currency] += $conversions->amount;
+            $conversionsSums[$conversions->currency] += $conversions->amount;
         }
-
-        $conversionsSum = $conversionsSum->map(function ($sum, $currency) {
+        $conversionsSums = $conversionsSums->map(function ($sum, $currency) {
             return number_format($sum, 2) . ' ' . $currency;
         })->values()->implode(', ');
 
-
-        $newConversionsCount = $article->loadNewConversionsCount();
-        $renewedConversionsCount = $article->loadRenewedConversionsCount();
-
         $pageviewsSubscribersToAllRatio =
             $article->pageviews_all == 0 ? 0 : ($article->pageviews_subscribers / $article->pageviews_all) * 100;
+
+        $mediums = $this->journalHelper->derivedRefererMediumGroups()->mapWithKeys(function ($item) {
+            return [$item => $item];
+        });
 
         return response()->format([
             'html' => view('articles.show', [
                 'article' => $article,
                 'pageviewsSubscribersToAllRatio' => $pageviewsSubscribersToAllRatio,
-                'conversionRate' => $conversionRate,
-                'conversionsSum' => $conversionsSum,
-                'uniqueBrowsersCount' => $uniqueBrowsersCount,
-                'newConversionsCount' => $newConversionsCount,
-                'renewedConversionsCount' => $renewedConversionsCount,
+                'conversionsSums' => $conversionsSums,
                 'dataFrom' => $request->input('data_from', 'now - 30 days'),
                 'dataTo' => $request->input('data_to', 'now'),
-                'hasTitleVariants' => count($titleVariants) > 1,
-                'hasImageVariants' => count($imageVariants) > 1,
+                'mediums' => $mediums,
+                'mediumColors' => Colors::refererMediumTagsToColors($mediums, true),
+                'visitedFrom' => $request->input('visited_from', 'now - 30 days'),
+                'visitedTo' => $request->input('visited_to', 'now'),
             ]),
-            'json' => new ArticleResource($article)
+            'json' => new ArticleResource($article),
+        ]);
+    }
+
+    public function dtReferers(Article $article, Request $request)
+    {
+        $length = $request->input('length');
+        $start = $request->input('start');
+        $orderOptions = $request->input('order');
+        $draw = $request->input('draw');
+
+        $visitedTo = Carbon::parse($request->input('visited_to'), $request->input('tz'))->tz('UTC');
+        $visitedFrom = Carbon::parse($request->input('visited_from'), $request->input('tz'))->tz('UTC');
+
+        $ar = (new AggregateRequest('pageviews', 'load'))
+            ->setTime($visitedFrom, $visitedTo)
+            ->addGroup('derived_referer_host_with_path', 'derived_referer_medium', 'derived_referer_source')
+            ->addFilter('article_id', $article->external_id);
+
+        $columns = $request->input('columns');
+        foreach ($columns as $index => $column) {
+            if (isset($column['search']['value'])) {
+                $ar->addFilter($column['name'], ...explode(',', $column['search']['value']));
+            }
+        }
+
+        $data = collect();
+        $records = $this->journal->count($ar);
+
+        // 'derived_referer_source' has priority over 'derived_referer_host_with_path'
+        // since we do not want to distinguish between e.g. m.facebook.com and facebook.com, all should be categorized as one
+        $aggregated = [];
+        foreach ($records as $record) {
+            $derivedMedium = $record->tags->derived_referer_medium;
+            $derivedSource = $record->tags->derived_referer_source;
+            $source = $record->tags->derived_referer_host_with_path;
+            $count = $record->count;
+
+            if (!array_key_exists($derivedMedium, $aggregated)) {
+                $aggregated[$derivedMedium] = [];
+            }
+
+            $key = $source;
+            if ($derivedSource) {
+                $key = $derivedSource;
+            }
+
+            if (!array_key_exists($key, $aggregated[$derivedMedium])) {
+                $aggregated[$derivedMedium][$key] = 0;
+            }
+            $aggregated[$derivedMedium][$key] += $count;
+        }
+
+        foreach ($aggregated as $medium => $mediumSources) {
+            foreach ($mediumSources as $source => $count) {
+                $data->push([
+                    'derived_referer_medium' => $medium,
+                    'source' => $source,
+                    'visits_count' => $count,
+                ]);
+            }
+        }
+
+        if (count($orderOptions) > 0) {
+            $option = $orderOptions[0];
+            $orderColumn = $columns[$option['column']]['name'];
+            $orderDirectionDesc = $option['dir'] === 'desc';
+            $data = $data->sortBy($orderColumn, SORT_REGULAR, $orderDirectionDesc)->values();
+        }
+
+        $recordsTotal = $data->count();
+        $data = $data->slice($start, $length)->values();
+
+        return response()->json([
+            'draw' => $draw,
+            'recordsTotal' => $recordsTotal,
+            'recordsFiltered' => $recordsTotal,
+            'data' => $data
         ]);
     }
 }

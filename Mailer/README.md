@@ -88,8 +88,25 @@ couple of settings you can configure:
     * *HTML version.* HTML (primary) version of email that people will see. HTML version is being previewed in the
     form for creation of new email.
     
-Text and HTML versions of *email* support [Twig syntax](https://twig.symfony.com/doc/2.x/templates.html). You can use standard Twig features in your templates or use
-custom variables provided by [Generators](#generators).
+Text and HTML versions of *email* support [Twig syntax](https://twig.symfony.com/doc/2.x/templates.html) and you can use
+standard Twig features in your templates. Mailer is able to provide custom variables to your templates. These can
+originate from different sources:
+
+* System variables.
+  * `autologin`: generates and prints unique token for each email address, that can be later validated via
+  [users/check-token](#get-apiv1userscheck-token) API.
+  
+    It's meant to be used within URLs (e.g. `http://dennikn.sk/email-settings{{ autologin }}`)
+ 
+* Variables provided by [Generators](#generators), which can **only** be used in generator templates.
+If your generator provides `foo` variable, you can use it as `{{ foo }}` in your generator template.
+
+* Variables provided by `IUser` (see [User integration](#user-integration)). For example if the response from your API
+includes `first_name` key as described in the user integration example, you can use it in your email template as
+`{{ first_name }}` variable.
+
+*Note: Mailer doesn't verify presence of the variable nor does it currently provide fallback value. If you use the
+custom variable and it won't be present in the `IUser` response, empty string will be injected into your email body.*   
     
 Saving the *email* doesn't trigger any sending. It creates an instance of *email* that might be sent manually (or by 3rd
 parties) via API or as a *batch* within a Mailer's *job*. 
@@ -315,6 +332,26 @@ to the parameters stated in `apiParams()`. This is a very specific use of an int
         }
     }
     ``` 
+    
+###### Registering generator
+
+When your implementation is ready, register your generator in `config.local.neon`. The parameters of `registerGenerator`
+method are:
+
+* *type*: URL-friendly name of the generator which is used to link generator template with the actual implementing class.
+Removing *type* which is still used in generator templates might cause system inconsistency and errors.
+* *label*: Name of the generator as is displayed in Mailer admin forms.
+* *instance of `Remp\MailerModule\Generators\IGenerator`*: Implementation class used when generator is selected. It's
+safe to swap implementation instances anytime as *type* is used for referencing/linking generator templates and
+generator implementations.
+
+```neon
+services:
+	# ...
+	generator:
+		setup:
+			- registerGenerator('newsfilter', 'Newsfilter', Remp\MailerModule\Generators\NewsfilterGenerator())
+```
     
 ### API Documentation
 
@@ -605,6 +642,156 @@ Response:
 
 ---
 
+#### POST `/api/v1/users/bulk-subscribe`
+
+Bulk subscribe allows to subscribe and unsubscribe multiple users in one batch. For details about subscribe / unsubscribe see individual calls above.
+
+##### *Headers:*
+
+| Name | Value | Required | Description |
+| --- |---| --- | --- |
+| Authorization | Bearer *String* | yes | API token. |
+
+##### *Body:*
+
+
+```json5
+{
+  "users": [
+    {
+      "email": "admin@example.com", // String; email of the user
+      "user_id": 12345, // Integer; ID of the user
+
+      // one of the following is required
+      "list_id": 14, // Integer; ID of the newsletter list you're subscribing the user to
+      "list_code": "alerts", // String; code of the newsletter list you're subscribing the user to
+
+      "variant_id": 3, // Integer; ID of the variant of newsletter list you're subscribing user to. Must belong to provided list.
+
+      "subscribe": false, // Boolean; indicates if you want to subscribe or unsubscribe user
+
+      // optional UTM parameters used only if `subscribe:false` for tracking "what" made the user unsubscribe
+      "utm_params": { // Object; optional UTM parameters for pairing which email caused the user to unsubscribe. UTM params are generated into the email links automatically.
+        "utm_source": "newsletter_daily",
+        "utm_medium": "email",
+        "utm_campaign": "daily-newsletter-11.3.2019-personalized",
+        "utm_content": "26026"
+      }
+    }
+  //...
+  ]
+}
+```
+
+###### *Properties of one users element*
+
+| Name | Value | Required | Description |
+| --- |---| --- | --- |
+| email | *String* | yes | Email address of user. |
+| user_id | *String/Integer* _(validated by FILTER_VALIDATE_INT)_ | yes | ID of user. |
+| subscribe | *Boolean* | yes | Flag to indicate if user should subscribed or un-subscribed. |
+| list_id | *Integer* | yes _(use list_id or list_code)_ | ID of mail list. |
+| list_code | *String* | yes _(use list_id or list_code)_ | Code of mail list. |
+| variant_id | *Integer* | no | Optional ID of variant. |
+| utm_params | *Integer* | no | Optional UTM parameters for pairing which email caused the user to unsubscribe. |
+
+
+##### *Example:*
+
+```shell
+curl -X POST \
+  http://mailer.remp.press/api/v1/users/bulk-subscribe \
+  -H 'Authorization: Bearer XXX' \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "users": [
+          {
+            "email": "admin@example.com",
+            "user_id": 1,
+            "subscribe": true,
+            "list_id": 2
+          },
+          {
+            "email": "test@example.com",
+            "user_id": 2,
+            "subscribe": true,
+            "list_code": "demo-weekly-newsletter",
+            "variant_id": 4
+          },
+          {
+            "email": "silent@example.com",
+            "user_id": 3,
+            "subscribe": false,
+            "list_id": 3,
+            "utm_params": {
+              "utm_source": "newsletter_daily",
+              "utm_medium": "email",
+              "utm_campaign": "daily-newsletter-11.3.2019-personalized",
+              "utm_content": "26026"
+            }
+          }
+        ]
+}'
+```
+
+Response:
+
+```json5
+{
+    "status": "ok"
+}
+```
+
+###### *Example with errors:*
+
+```shell
+curl -X POST \
+  http://mailer.remp.press/api/v1/users/bulk-subscribe \
+  -H 'Authorization: Bearer XXX' \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "users": [
+          {
+            "email": "admin@example.com"
+          },
+          {
+            "user_id": "67890"
+          },
+          {
+            "email": "qa@example.com",
+            "user_id": "qa123"
+          },
+          {
+            "email": "qa1@example.com",
+            "user_id": "123"
+          },
+          {
+            "email": "qa2@example.com",
+            "user_id": "123",
+            "list_id": 1
+          }
+        ]
+      }'
+```
+
+Error Response:
+
+```json5
+{
+  "status": "error",
+  "message": "Input data contains errors. See included list of errors.",
+  "errors": {
+    "element_0": "Required field missing: `user_id`.",
+    "element_1": "Required field missing: `email`.",
+    "element_2": "Parameter `user_id` must be integer. Got [qa123].",
+    "element_3": "Required field missing: `list_id` or `list_code`.",
+    "element_4": "Required field missing: `subscribe`.",
+  }
+}
+```
+
+---
+
 #### GET `/api/v1/users/check-token`
 
 Verifies validity of autologin token provided within email.
@@ -721,6 +908,84 @@ Response:
         }
         // ...
     ]
+}
+```
+
+---
+
+#### POST `/api/v1/mailers/mail-type-upsert`
+
+Creates or updates mail type (newsletter list). Endpoint complements creation of newsletter list via web interface.
+
+If existing `id`/`code` is provided, API handler updates existing record, otherwise new record is created. Field `id`
+has higher precedence in finding the existing record.
+
+##### *Headers:*
+
+| Name | Value | Required | Description |
+| --- |---| --- | --- |
+| Authorization | Bearer *String* | yes | API token. |
+
+##### *Body:*
+
+```json5
+{
+    "mail_type_category_id": 5, // Integer, required; Reference to mail type category.
+    "priority": 100, // Integer, required; Priority of newsletter during sending. Higher number is prioritized in queue.
+    "code": 22, // String, required; URL-friendly slug identifying mail type
+    "title": "Foo Bar", // String, required: Title of mail type
+    "description": "Newsletter sent to our premium subscribers", // String, required: Description of list visible in Mailer admin
+    "sorting": 100, // Integer, optional; Indicator of how the mail types should be sorted in API and web. Sorting is in ascending order.
+    "locked": false, // Boolean, optional; Flag indicating whether users should be able to subscribe/unsubscribe from the list (e.g. you want your system emails locked and subscribed for everyone)  
+    "auto_subscribe": false, // Boolean, optional; Flag indicating whether users should be subscribed to this list automatically  
+    "is_public": false, // Boolean, optional; Flag whether the list should be available in Mailer admin for selection. Defaults to true.
+    "public_listing": false, // Boolean, optional; Flag whether the user should see the newsletter. Defaults to false.
+    "image_url": "http://example.com/image.jpg", // String, optional; URL of image for frontend UI.
+    "preview_url": "http://example.com/demo.html", // String, optional; URL of example newsletter to preview content to users.
+}
+```
+
+##### *Example:*
+
+```shell
+curl -X POST \
+  http://mailer.remp.press/api/v1/mailers/mail-type-upsert \
+  -H 'Authorization: Bearer XXX' \
+  -H 'Content-Type: application/json' \
+  -b PHPSESSID=cfa9527535e31a0ccb678f792299b0d2 \
+  -d '{
+	"mail_type_category_id": 5,
+	"priority": 100,
+	"code": "foo-bar",
+	"title": "Foo Bar",
+	"description": "Testing list"
+}'
+```
+
+Response:
+
+```json5
+{
+    "status": "ok",
+    "data": {
+        "id": 23,
+        "code": "foo-bar",
+        "title": "Foo Bar",
+        "sorting": 15,
+        "description": null,
+        "priority": 100,
+        "mail_type_category_id": 5,
+        "locked": false,
+        "is_public": false,
+        "public_listing": true,
+        "auto_subscribe": false,
+        "image_url": null,
+        "preview_url": null,
+        "created_at": "2019-06-27T14:08:25+02:00",
+        "updated_at": "2019-06-27T14:08:36+02:00",
+        "is_multi_variant": false,
+        "default_variant_id": null
+    }
 }
 ```
 
@@ -1235,6 +1500,10 @@ however strongly recommended.
       $userId => [
           'id' => String, // userId
           'email' => String, // valid email address of user
+        
+          // you can provide optional data that can be used within your email templates, for example:
+          'first_name' => String,
+          'last_name' => String, 
       ],
   ];
   ```

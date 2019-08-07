@@ -13,9 +13,12 @@ class VariantsPrimaryKey extends Migration
      */
     public function up()
     {
-        Schema::table('campaign_banners', function (Blueprint $table) {
-            $table->increments('id')->first();
-        });
+        if (!Schema::hasColumn('campaign_banners', 'id'))
+        {
+            Schema::table('campaign_banners', function (Blueprint $table) {
+                $table->increments('id')->first();
+            });
+        }
     }
 
     /**

@@ -133,6 +133,10 @@ var run = function() {
     banner.campaignUuid = campaignUuid;
     banner.variantUuid = variantUuid;
     banner.uuid = bannerUuid;
+    
+    if (typeof remplib.campaign.bannerUrlParams !== "undefined") {
+        banner.urlParams = remplib.campaign.bannerUrlParams;
+    }
 
     if (isControlGroup) {
         banner.displayDelay = 0;
@@ -290,10 +294,8 @@ $redis = new \Predis\Client([
     'scheme' => 'tcp',
     'host'   => getenv('REDIS_HOST'),
     'port'   => getenv('REDIS_PORT') ?: 6379,
-],[
-    'parameters' => ['password' => env('REDIS_PASSWORD', null)],
+    'password' => getenv('REDIS_PASSWORD') ?: null,
 ]);
-
 /** @var \App\Contracts\SegmentAggregator $segmentAggregator */
 $segmentAggregator = unserialize($redis->get(\App\Providers\AppServiceProvider::SEGMENT_AGGREGATOR_REDIS_KEY))();
 if (!$segmentAggregator) {
@@ -428,8 +430,14 @@ foreach ($campaignIds as $campaignId) {
     }
 
     // using adblock?
-    if ($campaign->using_adblock && !$data->usingAdblock || $campaign->using_adblock === false && $data->usingAdblock) {
-        continue;
+    if ($campaign->using_adblock !== null) {
+        if (!isset($data->usingAdblock)) {
+            Log::error("Unable to load if user with ID [{$userId}] & browserId [{$browserId}] is using AdBlock.");
+            continue;
+        }
+        if ($campaign->using_adblock && !$data->usingAdblock || $campaign->using_adblock === false && $data->usingAdblock) {
+            continue;
+        }
     }
 
     // pageview rules

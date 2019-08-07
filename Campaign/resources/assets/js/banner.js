@@ -26,7 +26,11 @@ window.remplib = window.remplib || {};
                 closeTimeout: model['close_timeout'] || null,
                 // inline
                 targetSelector: model['target_selector'] || null,
-                variant: model['variant_uuid']
+                variant: model['variant_uuid'],
+                adminPreview: false,
+                js: model['js'] || null,
+                jsIncludes: model['js_includes'] || null,
+                cssIncludes: model['css_includes'] || null
             };
 
             if (banner.template === 'medium_rectangle') {
@@ -72,7 +76,9 @@ window.remplib = window.remplib || {};
             if (banner.template === 'collapsible_bar') {
                 banner.collapsibleBarTemplate = {
                     mainText: model['collapsible_bar_template']['main_text'] || "",
+                    headerText: model['collapsible_bar_template']['header_text'] || "",
                     collapseText: model['collapsible_bar_template']['collapse_text'] || "",
+                    expandText: model['collapsible_bar_template']['expand_text'] || "",
                     buttonText: model['collapsible_bar_template']['button_text'] || "",
                     backgroundColor: model['collapsible_bar_template']['background_color'] || null,
                     textColor: model['collapsible_bar_template']['text_color'] || null,
@@ -91,6 +97,17 @@ window.remplib = window.remplib || {};
                     text: model['html_template']['text'] || null,
                     css: model['html_template']['css'] || null,
                     dimensions: model['html_template']['dimensions'] || null,
+                }
+            }
+
+            if (banner.template === 'html_overlay') {
+                banner.htmlOverlayTemplate = {
+                    backgroundColor: model['html_overlay_template']['background_color'] || null,
+                    textColor: model['html_overlay_template']['text_color'] || null,
+                    fontSize: model['html_overlay_template']['font_size'] || null,
+                    textAlign: model['html_overlay_template']['text_align'] || null,
+                    text: model['html_overlay_template']['text'] || null,
+                    css: model['html_overlay_template']['css'] || null,
                 }
             }
 

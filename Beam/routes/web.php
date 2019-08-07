@@ -19,6 +19,7 @@ Route::middleware('auth.basic.dashboard')->group(function () {
     Route::get('public', 'DashboardController@public')->name('dashboard.public');
     Route::post('public/articlesJson', 'DashboardController@mostReadArticles')->name('public.articles.json');
     Route::post('public/timeHistogramJson', 'DashboardController@timeHistogram')->name('public.timeHistogram.json');
+    Route::post('public/timeHistogramNewJson', 'DashboardController@timeHistogramNew')->name('public.timeHistogramNew.json');
 });
 
 Route::middleware('auth.jwt')->group(function () {
@@ -26,6 +27,7 @@ Route::middleware('auth.jwt')->group(function () {
     Route::get('dashboard', 'DashboardController@index')->name('dashboard.index');
     Route::post('dashboard/articlesJson', 'DashboardController@mostReadArticles')->name('dashboard.articles.json');
     Route::post('dashboard/timeHistogramJson', 'DashboardController@timeHistogram')->name('dashboard.timeHistogram.json');
+    Route::post('dashboard/timeHistogramNewJson', 'DashboardController@timeHistogramNew')->name('dashboard.timeHistogramNew.json');
 
     Route::get('accounts/json', 'AccountController@json');
     Route::get('accounts/{account}/properties/json', 'PropertyController@json')->name('accounts.properties.json');
@@ -71,6 +73,7 @@ Route::middleware('auth.jwt')->group(function () {
 
     Route::get('articles/{article}/histogramJson', 'ArticleDetailsController@timeHistogram')->name('articles.timeHistogram.json');
     Route::get('articles/{article}/variantsHistogramJson', 'ArticleDetailsController@variantsHistogram')->name('articles.variantsHistogram.json');
+    Route::get('articles/{article}/dtReferers', 'ArticleDetailsController@dtReferers')->name('articles.dtReferers');
 
     Route::resource('articles', 'ArticleController', [
         'only' => ['store'],
@@ -79,6 +82,7 @@ Route::middleware('auth.jwt')->group(function () {
     Route::resource('articles', 'ArticleDetailsController', [
         'only' => ['show'],
     ]);
+    Route::get('article/{article?}', 'ArticleDetailsController@showByParameter');
 
     Route::get('newsletters/json', 'NewsletterController@json')->name('newsletters.json');
     Route::post('newsletters/validate', 'NewsletterController@validateForm')->name('newsletters.validateForm');
@@ -109,6 +113,4 @@ Route::middleware('auth.jwt')->group(function () {
         Route::get('googleanalyticsreporting/histogramJson', 'GoogleAnalyticsReportingController@timeHistogram')
             ->name('googleanalyticsreporting.timeHistogram.json');
     }
-
-
 });

@@ -89,19 +89,19 @@
                                 <dt>
                                     <span data-toggle="tooltip" data-placement="top" title="" data-original-title="Ratio of new conversions and unique visitors">Conversion rate</span>
                                 </dt>
-                                <dd>{{number_format($conversionRate, 4)}} %</dd>
+                                <dd>{{number_format($article->conversion_rate, 4)}} %</dd>
                             </dl>
                             <dl class="dl-horizontal">
                                 <dt>New conversions</dt>
-                                <dd>{{$newConversionsCount}}</dd>
+                                <dd>{{$article->new_conversions_count}}</dd>
                             </dl>
                             <dl class="dl-horizontal">
                                 <dt><span data-toggle="tooltip" data-placement="top" title="" data-original-title="Users who already had a subscription in the past">Renewed conversions</span></dt>
-                                <dd>{{$renewedConversionsCount}}</dd>
+                                <dd>{{$article->renewed_conversions_count}}</dd>
                             </dl>
                             <dl class="dl-horizontal">
                                 <dt>Conversions amount</dt>
-                                <dd>{{ $conversionsSum }}</dd>
+                                <dd>{{ $conversionsSums }}</dd>
                             </dl>
                         </div>
                     </div>
@@ -134,12 +134,13 @@
         </div>
 
         <article-details
-                :has-title-variants="{{$hasTitleVariants ? 'true' : 'false'}}"
-                :has-image-variants="{{$hasImageVariants ? 'true' : 'false'}}"
+                :has-title-variants="{{$article->has_title_variants ? 'true' : 'false'}}"
+                :has-image-variants="{{$article->has_image_variants ? 'true' : 'false'}}"
                 :url="url"
                 :variants-url="variantsUrl"
                 ref="histogram" >
         </article-details>
+
     </div>
     <script type="text/javascript">
         new Vue({
@@ -160,6 +161,88 @@
                 }
             }
         })
+    </script>
+
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h2>Referer stats <small></small></h2>
+                    <div id="smart-range-selector">
+                        {!! Form::hidden('visited_from', $visitedFrom) !!}
+                        {!! Form::hidden('visited_to', $visitedTo) !!}
+                        <smart-range-selector from="{{$visitedFrom}}" to="{{$visitedTo}}" :callback="callback">
+                        </smart-range-selector>
+                    </div>
+                </div>
+
+                <script>
+                    $.fn.dataTables['render']['referer_medium'] = function () {
+                        return function(data) {
+                            var colors = {!! json_encode($mediumColors) !!};
+                            return "<span style='font-size: 18px; color:" + colors[data] + "'>●</span> " + data;
+                        }
+                    };
+                </script>
+
+                {!! Widget::run('DataTable', [
+                    'colSettings' => [
+                        'derived_referer_medium' => [
+                            'header' => 'medium',
+                            'orderable' => false,
+                            'filter' => $mediums,
+                            'priority' => 1,
+                            'render' => 'referer_medium',
+                        ],
+                        'source' => [
+                            'header' => 'source',
+                            'searchable' => false,
+                            'orderable' => false,
+                            'priority' => 1,
+                        ],
+                        'visits_count' => [
+                            'header' => 'visits count',
+                            'searchable' => false,
+                            'priority' => 1,
+                            'render' => 'number',
+                            'className' => 'text-right',
+                        ],
+                    ],
+                    'dataSource' => route('articles.dtReferers', $article->id),
+                    'order' => [2, 'desc'],
+                    'requestParams' => [
+                        'visited_from' => '$(\'[name="visited_from"]\').val()',
+                        'visited_to' => '$(\'[name="visited_to"]\').val()',
+                        'tz' => 'Intl.DateTimeFormat().resolvedOptions().timeZone',
+                    ],
+                    'refreshTriggers' => [
+                        [
+                            'event' => 'change',
+                            'selector' => '[name="visited_from"]'
+                        ],
+                        [
+                            'event' => 'change',
+                            'selector' => '[name="visited_to"]',
+                        ]
+                    ],
+                ]) !!}
+            </div>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        new Vue({
+            el: "#smart-range-selector",
+            components: {
+                SmartRangeSelector
+            },
+            methods: {
+                callback: function (from, to) {
+                    $('[name="visited_from"]').val(from);
+                    $('[name="visited_to"]').val(to).trigger("change");
+                }
+            }
+        });
     </script>
 
 @endsection
